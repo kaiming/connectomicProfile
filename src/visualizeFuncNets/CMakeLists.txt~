@@ -1,0 +1,36 @@
+set(projectName visualizeFuncNets)
+cmake_minimum_required(VERSION 2.6)
+
+set(AllLibs VTK  MYFSL Alglib GSL Arma KML Metis)
+# set(CMAKE_CXX_FLAGS "-fpermissive")
+ 
+foreach ( pkg ${AllLibs} )
+find_package(${pkg} REQUIRED)
+if(${pkg}_FOUND)
+  include( ${USE_${pkg}_FILE} )
+endif(${pkg}_FOUND)
+endforeach(pkg)
+
+# set(USE_BLAS_LIB)
+
+PROJECT(${projectName})
+
+IF(libName)
+ADD_LIBRARY(${libName} SHARED ${libName}.cpp)
+ENDIF(libName)
+
+ADD_EXECUTABLE(${projectName} ${projectName}.cpp)
+
+TARGET_LINK_LIBRARIES(${projectName} ${libName} ${KML_LIBRARIES} ${Graclus_LIBRARIES} ${Metis_LIBRARIES} 
+		      ${Arma_LIBRARIES} ${GSL_LIBRARIES} ${MYFSL_LIBRARIES} ${VTK_LIBRARIES} ${ITK_LIBRARIES}
+		      ${Alglib_LIBRARIES})
+ 
+INSTALL(TARGETS ${projectName} DESTINATION ~/bin)
+
+IF(libName)
+INSTALL(TARGETS ${libName} DESTINATION ${KML_DIR}/lib)
+INSTALL(DIRECTORY ./ DESTINATION ${KML_DIR}/include/ FILES_MATCHING PATTERN *.h)
+add_custom_target(updateKML COMMAND updateKML ${libName})
+ENDIF(libName)
+
+
