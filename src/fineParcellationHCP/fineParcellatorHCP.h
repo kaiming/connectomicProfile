@@ -4,8 +4,8 @@
  *
  */
 
-#ifndef __FineParcellator__H
-#define __FineParcellator__H
+#ifndef __FineParcellatorHCP__H
+#define __FineParcellatorHCP__H
 
 #include <iostream>
 #include "indexer.h"
@@ -23,9 +23,10 @@ class CFineParcellatorHCP
 {
 
 private:
-    CPrivacyFineParcellator* data;
-    CFineParcellator& operator=(const CFineParcellator&);
-    CFineParcellatorHCP(const CFineParcellator&);
+    CPrivacyFineParcellatorHCP* data;
+    CFineParcellatorHCP& operator=(const CFineParcellatorHCP&);
+    CFineParcellatorHCP(const CFineParcellatorHCP&);
+    
     int GetMaxNbrParcels(void);
     int GetMaxNbrPartitions(void);
     void BuildPartitionNbr(void);
@@ -66,7 +67,7 @@ private:
 
 public:
 
-    CFineParcellatorHCP(std::string surfName, std::string fmriName, std::string mhd4fmri);
+    CFineParcellatorHCP(std::string surfName, std::string fmriName, std::string fsLabels);
     ~CFineParcellatorHCP();
 
 
@@ -116,7 +117,7 @@ public:
     void SavePartitionsOnSurface(std::string fileName);
 
     //prepare the inputs for Ncuts, using partitions/parcels; ;
-    void PrepareGraph4Ncut(graph_t* graph, const KML::CPartition& currentPartition);
+    void PrepareGraph4Metis(graph_t* graph, const KML::CPartition& currentPartition);
     //this will do the whole surf instead of parcels; 
     void PrepareGraph4Metis(graph_t* graph);
      

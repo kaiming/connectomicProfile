@@ -4,7 +4,7 @@
  *
  */
 
-#include "fineParcellator.h"
+#include "fineParcellatorHCP.h"
 #include "string"
 #include "triSurface.h"
 #include <vector>
@@ -42,21 +42,15 @@ namespace KML
 class CPrivacyFineParcellatorHCP
 {
 
-    friend class CFineParcellator;
+    friend class CFineParcellatorHCP;
 
 private:
 
-    CPrivacyFineParcellatorHCP ( string surfName, string mhdName ) : surf ( surfName.c_str() ), indexer ( mhdName ), meanSimilarity ( 0.3 ) ,maxPos4Inter ( 1 ) {};
+    CPrivacyFineParcellatorHCP ( string surfName ) : surf ( surfName.c_str() ), meanSimilarity ( 0.3 ) ,maxPos4Inter ( 1 ), usePCA4BOLDs(false), randomParcel(false),TR(1.f),numSolutions(50),numTimePoints(0),numPartitions(0){ numFaces=surf.GetNumOfCells(); numVertices=surf.GetNumOfPoints();};
     ~CPrivacyFineParcellatorHCP() {};
 
     CTriSurface surf;
-    CIndexer indexer;
 
-    //keep all the original bold signals for each vertex;
-    vector<vector<float> > bold4vertices;
-
-    //all the parcels;
-    vector<CParcel> parcels;
 
     //all partions;
     multiset<CPartition> tobePartitions;
@@ -72,20 +66,17 @@ private:
     vector<set<int> > nbrPartitions;
     vector<vector<int> > nbrCorrelsPtn;
 
-    //keep records all vertice label;
-    vector<int> parcelLabel4vertex;
 
     //keep records of all partition lables;
     vector<int> partionLabel4Vertex;
 
-    //keep records of all partition lables for parcles;
-    vector<int> partionLabel4Parcels;
 
     //the areas of partitions;
     vector<float> allAreas;
 
     //the cortex label;
     vector<bool> isCortex;
+    
     vector<int> allROIVertices;
 
     //whether pca or average for partition signal;
@@ -101,7 +92,6 @@ private:
 
     CColorSchemeRGB myColorScheme;
 
-    int numParcels;
     int numVertices;
     int numFaces;
     int numTimePoints;
@@ -110,14 +100,10 @@ private:
     int maxNbrs4Partitions;
 
     float TR;
-    int badMapThresh;
     float balance;// control via metis;
     float minCorrelThresh;
     int numSolutions;
-    int simType;
-    int windLength;
     float meanSimilarity;
-    double silsum;
 
     string mapCaret2FsRegSphere;
     string baseName;
@@ -126,31 +112,18 @@ private:
 };
 
 
-CFineParcellator::CFineParcellator ( const KML::CFineParcellator& )
+CFineParcellatorHCP::CFineParcellatorHCP ( const KML::CFineParcellatorHCP& )
 {
 
 }
 
-void CFineParcellator::PlotPrincipleVector ( std::vector< float >& src )
+void CFineParcellatorHCP::PlotPrincipleVector ( std::vector< float >& src )
 {
     KML::PlotLine<> ( src );
-
 }
 
-void CFineParcellator::BuildParcelRelationship()
-{
-    data->nbrCorrelsPcl.resize ( data->numParcels );
-    for ( int idxParcels = 0; idxParcels < data->numParcels ; ++idxParcels ) {
-        for ( set<int>::iterator it = data->nbrParcels[idxParcels].begin(); it!= data->nbrParcels[idxParcels].end(); ++it ) {
-            int nbrParcelIds = *it;
-            float correl = this->GetSimilarityTwoTimeSeries ( data->parcels[idxParcels].timeSeries, data->parcels[nbrParcelIds].timeSeries );
-
-            data->nbrCorrelsPcl[idxParcels].push_back ( int ( 100*correl ) );
-        }
-    } // end for loop::idxParcels
-}
-
-void CFineParcellator::BuildPartitionsAfterNCut()
+ 
+void CFineParcellatorHCP::BuildPartitionsAfterNCut()
 {
 
     //build partitions;
@@ -176,146 +149,10 @@ void CFineParcellator::BuildPartitionsAfterNCut()
     } // end for loop::idxCluster
 };
 
+ 
+ 
 
-void CFineParcellator::BuildInitParcels ()
-{
-    cout<<"BuildInitParcels()"<<endl;
-    volume4D<float> srcVol;
-    NEWIMAGE::read_volume4D ( srcVol, data->fMRIName );
-//         cout<<"BuildInitParcels::read_volume4D"<<endl;
-    //the number of independent grids determines initial parcel number;
-    map<IndexType, vector<int> > gridMembers;
-    int badMap =0;
-    float badValue = 0.f;
-
-//        int cortexVerticeCount=0;
-    for ( int idxVertices = 0 ; idxVertices < data->numVertices; ++idxVertices ) {
-
-        if ( ! data->isCortex[idxVertices] ) {
-            continue;
-        }
-
-        const VectorType& coord = data->surf.GetPointCoords ( idxVertices );
-        IndexType grid = data->indexer.GetIndex ( coord );
-
-        for ( int idxTimePoints = 0 ; idxTimePoints < data->numTimePoints; ++idxTimePoints ) {
-            data->bold4vertices[idxVertices][idxTimePoints] = srcVol ( grid.x, grid.y, grid.z, idxTimePoints );
-        } // end of for::idxTimePoints
-
-        if ( data->bold4vertices[idxVertices][0]==data->bold4vertices[idxVertices][1]==data->bold4vertices[idxVertices][2] ) { //can not find a voxel in fmri;
-            //enlarge size;
-
-            for ( int z = -1; z < 2 ; ++z ) {
-                for ( int y = -1; y < 2 ; ++y ) {
-                    for ( int x = -1; x < 2 ; ++x ) {
-                        if (!( srcVol ( grid.x+x, grid.y+y, grid.z+z,0 ) == srcVol ( grid.x+x, grid.y+y, grid.z+z,1 ) ==srcVol ( grid.x+x, grid.y+y, grid.z+z,2 ))) {
-                            for ( int idxTimePoints = 0 ; idxTimePoints < data->numTimePoints; ++idxTimePoints ) {
-                                data->bold4vertices[idxVertices][idxTimePoints] = srcVol ( grid.x+x, grid.y+y, grid.z+z, idxTimePoints );
-                            } // end of for::idxTimePoints
-                            break;
-                        }
-                    } // end for loop::x
-                } // end for loop::y
-            } // end for loop::z
-
-
-            if ( data->bold4vertices[idxVertices][0]==data->bold4vertices[idxVertices][1] ==data->bold4vertices[idxVertices][2])
-                for ( int z = -2; z < 3 ; ++z ) {
-                    for ( int y = -2; y < 3 ; ++y ) {
-                        for ( int x = -2; x < 3 ; ++x ) {
-                            if (!( srcVol ( grid.x+x, grid.y+y, grid.z+z,0 ) == srcVol ( grid.x+x, grid.y+y, grid.z+z,1 ) ==srcVol ( grid.x+x, grid.y+y, grid.z+z,2 ))) {
-                                for ( int idxTimePoints = 0 ; idxTimePoints < data->numTimePoints; ++idxTimePoints ) {
-                                    data->bold4vertices[idxVertices][idxTimePoints] = srcVol ( grid.x+x, grid.y+y, grid.z+z, idxTimePoints );
-                                } // end of for::idxTimePoints
-                                break;
-                            }
-                        } // end for loop::x
-                    } // end for loop::y
-                } // end for loop::z
-
-            if ( data->bold4vertices[idxVertices][0]==data->bold4vertices[idxVertices][1] ==data->bold4vertices[idxVertices][2]) {
-                cout<<"warning: this vertex can not find fmri voxel: "<< idxVertices<<" "<<badMap++<<endl;
-            }
-
-        }
-
-        gridMembers[grid].push_back ( idxVertices );
-//                ++cortexVerticeCount;
-    } // end of for::idxVertices
-
-//        cout<<"cortical vertices: "<<cortexVerticeCount<<endl;
-    //now build parcels;
-    map<IndexType, vector<int> >::iterator it = gridMembers.begin();
-    data->parcels.resize ( gridMembers.size() );
-    data->numParcels = data->parcels.size();
-    data->nbrParcels.resize ( data->parcels.size() );
-
-    cout<<"number of initial parcels: "<<data->numParcels<<endl;
-    cout<<"bad map vertice:"<<badMap<<endl;
-    if ( badMap > data->badMapThresh ) {
-        cout<<"@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@"<<endl;
-        cout<<"I can not continue, too many bad maps, please check your registration step "<<endl;
-        exit ( 1 );
-    }
-
-
-    int parcelIdx = 0;
-    while ( it!= gridMembers.end() ) {
-
-        data->parcels.operator[] ( parcelIdx ).parcelLabel = parcelIdx;
-        data->parcels.operator[] ( parcelIdx ).memberIds = it->second;
-        data->parcels.operator[] ( parcelIdx ).numVertices  = it->second.size();
-
-        //update label of vertice;
-        for ( int idxV = 0 ; idxV < it->second.size(); ++idxV ) {
-            data->parcelLabel4vertex[it->second[idxV]] = parcelIdx;
-        } // end of for::idxV
-
-
-        //determine the centerIdx of a parcel;
-        VectorType centerCoords;
-        for ( int idxV = 0 ; idxV < it->second.size(); ++idxV ) {
-            centerCoords+= data->surf.GetPointCoords ( it->second[idxV] );
-        } // end of for::idxVertices
-        centerCoords/=it->second.size();
-        vector<float> allDis ( it->second.size() );
-        for ( int idxV = 0 ; idxV < it->second.size(); ++idxV ) {
-            VectorType disVec = centerCoords - data->surf.GetPointCoords ( it->second[idxV] );
-            allDis[idxV] = disVec.NormSquare();
-        } // end of for::idxVertices
-
-        int minPos = -1;
-        float minValue = 100000;
-        KML::findMinValueAndIndex<> ( allDis,minValue,minPos );
-
-        data->parcels.operator[] ( parcelIdx ).centerVertexID= it->second[minPos];
-
-        //determine the time series;
-        data->parcels.operator[] ( parcelIdx ).timeSeries = data->bold4vertices[it->second[0]];
-
-        it++;
-        parcelIdx++;
-    }
-
-
-}
-
-
-int CFineParcellator::GetSimType ( void )
-{
-    return data->simType;
-}
-void CFineParcellator::SetSimType ( int type )
-{
-    if ( 0!= type && 1 !=type ) {
-        cout<<"Error! Invalid Similarity type: "<< type<<endl;
-        exit ( 1 );
-    } else {
-        data->simType = type ;
-    }
-}
-
-void CFineParcellator::SetROICortexVertices ( string fileName )
+void CFineParcellatorHCP::SetROICortexVertices ( string fileName )
 {
     data->isCortex.clear();
     data->isCortex.resize ( data->numVertices,false );
@@ -335,7 +172,7 @@ void CFineParcellator::SetROICortexVertices ( string fileName )
 
     instrm.close();
 }
-void CFineParcellator::SetRandomParcellation(bool value)
+void CFineParcellatorHCP::SetRandomParcellation(bool value)
 {
   data->randomParcel = value; 
   if(value == true)
@@ -346,10 +183,10 @@ void CFineParcellator::SetRandomParcellation(bool value)
 }
 
 
-CFineParcellator::CFineParcellator ( string surfName, string fmriName, string mhd4fmri )
+CFineParcellatorHCP::CFineParcellatorHCP ( string surfName, string fmriName, string fsLabels )
 {
     DEBUG_VAR ( data->baseName );
-    data = new CPrivacyFineParcellator ( surfName, mhd4fmri );
+    data = new CPrivacyFineParcellatorHCP ( surfName, fsLabels );
     data->surf.BuildNeighbors();
     volume4D<float> srcVol;
     NEWIMAGE::read_volume4D ( srcVol, fmriName );
@@ -377,14 +214,14 @@ CFineParcellator::CFineParcellator ( string surfName, string fmriName, string mh
 
 }
 
-void CFineParcellator::SetNumsMetisSolutions(int nSolutions)
+void CFineParcellatorHCP::SetNumsMetisSolutions(int nSolutions)
 {
     data->numSolutions = nSolutions;
 
 }
 
 
-void CFineParcellator::SetUsePCA4Bold ( bool usePCA )
+void CFineParcellatorHCP::SetUsePCA4Bold ( bool usePCA )
 {
     data->usePCA4BOLDs= usePCA;
     if(data->usePCA4BOLDs)
@@ -393,77 +230,41 @@ void CFineParcellator::SetUsePCA4Bold ( bool usePCA )
         cout<<"use mean for partion bolds"<<endl;
 }
 
-void CFineParcellator::SetMinCorrelThresh ( float minThresh )
+void CFineParcellatorHCP::SetMinCorrelThresh ( float minThresh )
 {
     KML::CheckValueRange<> ( minThresh,0.f,1.f );
     data->minCorrelThresh = minThresh;
 }
 
-float CFineParcellator::GetMinCorrelThresh ( void ) const
+float CFineParcellatorHCP::GetMinCorrelThresh ( void ) const
 {
     return data->minCorrelThresh;
 }
 
 
-void CFineParcellator::SetRegName ( string name )
+void CFineParcellatorHCP::SetCaretSurf2FSReg ( string name )
 {
-    data->sphereRegName = name;
+    data->mapCaret2FsRegSphere = name;
+    //TODO::add read file; 
 
 }
-int CFineParcellator::SetBaseName ( string name )
+int CFineParcellatorHCP::SetBaseName ( string name )
 {
     data->baseName = name;
 
 }
-int CFineParcellator::GetBadMappingThresh ( void )
-{
-    return data->badMapThresh;
-}
-void CFineParcellator::SetBadMappingThresh ( int maxNum )
-{
-    KML::CheckValueRange<> ( maxNum,0,1000 );
-    data->badMapThresh = maxNum;
-}
-float CFineParcellator::GetBlance ( void )
+  
+float CFineParcellatorHCP::GetBalance ( void )
 {
     return data->balance;
 }
-void CFineParcellator::SetBalance ( float balance )
+void CFineParcellatorHCP::SetBalance ( float balance )
 {
     data->balance = balance;
 }
-int CFineParcellator::GetWindLength()
-{
-    return data->windLength ;
-}
-void CFineParcellator::SetWindLength ( int windLength )
-{
-    if ( windLength < 20 || windLength > data->numTimePoints ) {
-        cout<<"Error window length: "<<windLength<<endl;
-        exit ( 1 );
-    }
-    data->windLength = windLength;
-}
-int CFineParcellator::GetMaxNbrParcels ( void )
-{
-    if ( data->maxNbrs4Parcels ) {
-        return data->maxNbrs4Parcels;
-    }
+  
 
-    int maxNum = 0;
-    for ( int idxParcels = 0 ; idxParcels < data->nbrParcels.size(); ++idxParcels ) {
-        if ( data->nbrParcels[idxParcels].size() > maxNum ) {
-            maxNum= data->nbrParcels[idxParcels].size();
-        }
-    } // end of for::idxParcels
-
-    cout<<"maximum number of neighbour parcels: "<<maxNum<<endl;
-
-    data->maxNbrs4Parcels = maxNum+1;
-    return data->maxNbrs4Parcels;
-}
-
-void CFineParcellator::FindPartitionCenters()
+void CFineParcellatorHCP::FindPartitionCenters()
 {
     // only do this after partiion is done;
     for ( int idxPart = 0; idxPart < data->donePartitions.size() ; ++idxPart ) {
@@ -509,7 +310,7 @@ void CFineParcellator::FindPartitionCenters()
 
 }
 
-int CFineParcellator::GetMaxNbrPartitions ( void )
+int CFineParcellatorHCP::GetMaxNbrPartitions ( void )
 {
 
     if ( data->maxNbrs4Partitions ) {
@@ -532,54 +333,35 @@ int CFineParcellator::GetMaxNbrPartitions ( void )
 
 }
 
-
-const KML::CIndexer& CFineParcellator::GetIndexer ( void )
-{
-    return data->indexer;
-}
-std::vector< float >& CFineParcellator::GetParcelTimeSeries ( int parcelIdx )
+ 
+fcol& CFineParcellatorHCP::GetVertexTimeSeries ( int vertex )
 {
     return data->parcels.operator[] ( parcelIdx ).timeSeries;
 }
-float CFineParcellator::GetTR ( void )
+float CFineParcellatorHCP::GetTR ( void )
 {
     return data->TR;
 }
-int CFineParcellator::GetNumFaces ( void )
+int CFineParcellatorHCP::GetNumFaces ( void )
 {
     return data->numFaces;
-}
-int CFineParcellator::GetNumParcels ( void )
-{
-    return data->numParcels;
-}
-int CFineParcellator::GetNumVertices ( void )
+} 
+int CFineParcellatorHCP::GetNumVertices ( void )
 {
     return data->numVertices;
 }
 
-void CFineParcellator::SetTR ( float tr )
+void CFineParcellatorHCP::SetTR ( float tr )
 {
     data->TR = tr;
 }
-int CFineParcellator::GetVertexParcelIdx ( int pointID )
-{
-    return data->parcelLabel4vertex[pointID];
-}
-std::vector< float >& CFineParcellator::GetVertexTimeSeries ( int vertexID )
-{
-    return data->bold4vertices[vertexID];
-}
-void CFineParcellator::SetIndexer ( const KML::CIndexer& othIndexer )
-{
-    data->indexer = othIndexer;
-}
-CFineParcellator::~CFineParcellator()
+  
+CFineParcellatorHCP::~CFineParcellatorHCP()
 {
     delete data;
 }
 
-void CFineParcellator::SavePartitionsOnSurface ( string fileName )
+void CFineParcellatorHCP::SavePartitionsOnSurface ( string fileName )
 {
 
     data->surf.NeedPointsColor ( );
@@ -594,7 +376,7 @@ void CFineParcellator::SavePartitionsOnSurface ( string fileName )
 
 }
 
-void CFineParcellator::PrintPartition ( const CPartition& currentPartition )
+void CFineParcellatorHCP::PrintPartition ( const CPartition& currentPartition )
 {
 //     const_cast<CPartition&>(currentPartition)>>cout;
 
@@ -603,109 +385,8 @@ void CFineParcellator::PrintPartition ( const CPartition& currentPartition )
 //         <<"center vertex id: "<<currentPartition.centerVertexID<<endl;
 
 }
-
-void CFineParcellator::BiNcut4WholeBrain ( int minCuts, int maxCuts )
-{
-
-//     this->OutPartSizeHist("hist",0,300);
-
-}
-
-void CFineParcellator::PruneSmallPartitions ( int minSize, float minCorrel )
-{
-
-    // for a partition that is smaller than minSize;
-    // find its neihbours;
-    // calculate the correlations;
-    // merge it with the closest partition;
-    // update partiion and neighbourhood; f
-
-
-    int count=0;
-    int allCount=0;
-    float totalCorrelNotMerged = 0;
-    float totalCorrelMerged = 0;
-
-    for ( int idxPart = 0; idxPart < data->donePartitions.size() ; ++idxPart ) {
-
-        if ( 1803 == idxPart || 1804 ==idxPart ) {
-            cout<<"";
-        }
-        CPartition& part2prune = data->donePartitions[idxPart];
-        if ( part2prune.parcelIds.size() < minSize ) {
-            ++allCount;
-
-            int lable2prune = part2prune.partitionLabel;
-
-            set<int>& allNbrsPartLable = data->nbrPartitions [ idxPart] ;
-            vector<float>& timeCourse2Prune = data->donePartitions[idxPart].principalVector;
-
-            vector<float> allCorrels ( allNbrsPartLable.size(), 0 );
-            set<int>::iterator itNbrPartLabel = allNbrsPartLable.begin();
-            for ( int idxNbrs = 0; idxNbrs < allCorrels.size() ; ++idxNbrs ) {
-                vector<float>& nbrTimeCourse = data->donePartitions[*itNbrPartLabel].principalVector;
-                float corre = this->GetSimilarityTwoTimeSeries ( timeCourse2Prune, nbrTimeCourse );
-                allCorrels[idxNbrs]= corre;
-                itNbrPartLabel++;
-            } // end for loop::idxNbrs
-
-            float maxCorrel= 0;
-            int maxPos = -1;
-            KML::findMaxValueAndIndex<> ( allCorrels,maxCorrel, maxPos );
-
-            if ( maxCorrel < minCorrel ) {
-                totalCorrelNotMerged+= maxCorrel;
-                continue;
-            }
-
-            totalCorrelMerged+= maxCorrel;
-            itNbrPartLabel= allNbrsPartLable.begin();
-            while ( maxPos-- ) {
-                itNbrPartLabel++;
-            }
-            int label2merge = *itNbrPartLabel;
-            CPartition& part2merge = data->donePartitions[label2merge];
-            count++;
-
-//             cout<< "prune #: "<<count<<" has parcels: "<<part2prune.numParcels <<" pruning part : "<< lable2prune <<" to:"<<label2merge<<  " correl: "<<maxCorrel<<" "<<part2prune.ratio<<" "<<part2merge.ratio<<" ";
-
-
-            //merge and rebuild nbrpartitions;
-            part2prune.partitionLabel = part2merge.partitionLabel;
-            for ( int idx = 0; idx < part2prune.parcelIds.size() ; ++idx ) {
-                part2merge.parcelIds.push_back ( part2prune.parcelIds[idx] );
-                data->partionLabel4Parcels[part2prune.parcelIds[idx]]=part2merge.partitionLabel;
-            } // end for loop::idx
-            part2merge.numParcels = part2merge.parcelIds.size();
-
-            this->DoPCA4Partition ( part2merge );
-// 	    cout<<part2merge.ratio<<endl;
-
-            // rebuild the nbrpartions;
-            // delete from nbrs of the lable2prune; and insert label2merge;
-
-            itNbrPartLabel= allNbrsPartLable.begin();
-            while ( itNbrPartLabel!= allNbrsPartLable.end() ) {
-                data->nbrPartitions.operator[] ( *itNbrPartLabel ).erase ( lable2prune );
-                if ( *itNbrPartLabel != label2merge ) {
-                    data->nbrPartitions[label2merge].insert ( *itNbrPartLabel );
-                    data->nbrPartitions.operator[] ( *itNbrPartLabel ).insert ( label2merge );
-                }
-                ++itNbrPartLabel;
-            }
-            data->nbrPartitions[lable2prune].clear();
-            data->donePartitions[lable2prune].numParcels=0;
-        }
-    } // end for loop::idxPart
-
-    cout<< "pruned: "<<count<<" outof small: "<< allCount<<" Mean Correl: "<<totalCorrelMerged/count<<" Correl of left partitions: "<<totalCorrelNotMerged/ ( allCount-count ) <<endl;
-
-
-
-
-}
-
-void CFineParcellator::CheckZeroPrincipalVectors4Parts ( void )
+   
+void CFineParcellatorHCP::CheckZeroPrincipalVectors4Parts ( void )
 {
     int numZeroVectors = 0;
 
@@ -733,7 +414,7 @@ void CFineParcellator::CheckZeroPrincipalVectors4Parts ( void )
     }
 }
 
-void CFineParcellator::DoNcut4WholeBrain ( int nParts )
+void CFineParcellatorHCP::PartitioningWholeBrainWithMetis ( int nParts )
 {
 
     data->baseName+=".";
@@ -743,13 +424,13 @@ void CFineParcellator::DoNcut4WholeBrain ( int nParts )
     this->BuildInitParcels ();
 
     //do nc;
-    this->NormalizedCut ( nParts );
+    this->DoPartitioning ( nParts );
 
     //build partitions;
     this->BuildPartitionsAfterNCut();
 // //
-    if ( data->sphereRegName.size() ) {
-        this->SavePartitionMetaInforSphere ( data->sphereRegName,data->baseName );
+    if ( data->mapCaret2FsRegSphere.size() ) {
+        this->SavePartitionMetaInforSphere ( data->mapCaret2FsRegSphere,data->baseName );
     }
 // //
     this->PrintAllPartitionInfo ( false,data->baseName+".partInfo" );
@@ -760,7 +441,7 @@ void CFineParcellator::DoNcut4WholeBrain ( int nParts )
 
 }
 
-float CFineParcellator::ComputeNCut(graph_t *graph, int *where, int npart)
+float CFineParcellatorHCP::ComputeNCut(graph_t *graph, int *where, int npart)
 {
     int i, j, cm, nvtxs;
     idx_t *ncut, *degree, *xadj, *adjncy;
@@ -812,7 +493,7 @@ float CFineParcellator::ComputeNCut(graph_t *graph, int *where, int npart)
 /*************************************************************************
 * This function computes the cut given the graph and a where vector
 **************************************************************************/
-int CFineParcellator::ComputeGraphCut(graph_t* graph, int* where)
+int CFineParcellatorHCP::ComputeGraphCut(graph_t* graph, int* where)
 {
     int i, j, cut;
 
@@ -835,11 +516,11 @@ int CFineParcellator::ComputeGraphCut(graph_t* graph, int* where)
 }
 
 
-void CFineParcellator::NormalizedCut ( int numCuts )
+void CFineParcellatorHCP::DoPartitioning ( int numCuts )
 {
 
     graph_t* currentGraph = CreateGraph();
-    this->PrepareGraph4Ncut ( currentGraph );
+    this->PrepareGraph4Metis ( currentGraph );
 
     params_t* params = new params_t;
     KmlInitParams(params,numCuts);
@@ -882,7 +563,7 @@ void CFineParcellator::NormalizedCut ( int numCuts )
     FreeGraph(&currentGraph);
 }
 
-void CFineParcellator::SaveNcutPartitions ( bool toSaveVtk, int pid )
+void CFineParcellatorHCP::SavePartitions ( bool toSaveVtk, int pid )
 {
     //check pcc connectivity pattern if pid set;
     if ( -1!=pid ) {
@@ -913,216 +594,8 @@ void CFineParcellator::SaveNcutPartitions ( bool toSaveVtk, int pid )
     }
 
 }
-
-void CFineParcellator::CheckScattersAndFix()
-{
-    // vector<int> problemClusters;
-    vector<int> problemClusters;
-    vector<int> unbalance;
-    for ( int idxLabel = 0; idxLabel < data->allParts.size() ; ++idxLabel ) {
-        vector<bool> isVisited ( data->numVertices,false );
-        for ( int idxv = 0; idxv < data->numVertices ; ++idxv ) {
-            if ( data->surf.GetPointLabel ( idxv ) == idxLabel  && isVisited[idxv]==false ) {
-                map<int, list<int> > tmpMap;
-                list<int> groupMem;
-                data->surf.Propagate2All ( idxv,groupMem,tmpMap,data->surf.GetAllPointLabel() );
-                if ( groupMem.size() != data->allParts[idxLabel].size() ) {
-//                                 cout<<"cluster "<<idxLabel<<" has problem: "<< nbrs.size()<<" "<<allParts[idxLabel].size()<<endl;
-                    problemClusters.push_back ( idxLabel );
-                    unbalance.push_back ( abs ( ( int ) groupMem.size()- ( int ) data->allParts[idxLabel].size() ) );
-                    break;
-                }
-                std::list< int >::iterator it=groupMem.begin();
-                while ( it!=groupMem.end() ) {
-                    isVisited[*it] = true;
-                    it++;
-                }
-            }
-        } // end for loop::idxv
-    } // end for loop::idxLabel
-
-    if ( problemClusters.size() ) {
-
-        while ( true ) {
-            int minValue=1000000,minIndex,fillValue=1000000;
-            KML::findMinValueAndIndex<> ( unbalance,minValue,minIndex );
-            if ( minValue!=fillValue ) {
-                int clusterLabel = problemClusters[minIndex];
-                cout<<"Fixing scatter problem: clusterLabel/unbalance: "<< clusterLabel <<" / "<<unbalance[minIndex]<<endl;
-
-                //reset unbalance;
-                unbalance[minIndex]=fillValue ;
-                vector<int>& tmpAllLabels = data->surf.GetAllPointLabel();
-
-                //find all subclusters first;
-                vector<int> subLabelVertices;
-                set<int> subLabelVerticesSet;
-                vector<int> subLabelSizes;
-                vector<list<int> >subLabelMembers;
-                vector<bool> isNotVisisted ( data->numVertices,true );
-                for ( int idxV = 0; idxV < data->numVertices ; ++idxV ) {
-                    if ( isNotVisisted[idxV] && clusterLabel == tmpAllLabels[idxV] ) {
-                        subLabelVertices.push_back ( idxV );
-                        subLabelVerticesSet.insert ( idxV );
-                        map<int, list<int> > tmpMap;
-                        list<int> members;
-                        data->surf.Propagate2All ( idxV,members,tmpMap,tmpAllLabels );
-                        subLabelMembers.push_back ( members );
-                        subLabelSizes.push_back ( members.size() );
-
-                        //mark all the vertices;
-                        std::list< int >::iterator it=members.begin();
-                        while ( it!=members.end() ) {
-                            isNotVisisted[*it]=false;
-                            it++;
-                        }
-
-                    }
-                } // end for loop::idxV
-
-                arma::ivec allNbrLabelsArma ( &subLabelSizes[0],subLabelSizes.size() );
-                arma::uword maxPos;
-                allNbrLabelsArma.max ( maxPos );
-
-                //leave the biggest one untouched, and relabel the rest;
-
-                for ( int idxSubLabels = 0; idxSubLabels < subLabelVertices.size(); ++idxSubLabels ) {
-                    list<int>& members= subLabelMembers[idxSubLabels];
-                    if ( maxPos == idxSubLabels ) {
-                        continue;
-                    }
-
-                    while ( members.size() ) {
-                        std::list< int >::iterator it= members.begin();
-                        while ( it!= members.end() ) {
-
-                            int returnLabel =  data->surf.ReLabelVertex2Nbr ( *it,tmpAllLabels,subLabelVerticesSet,1,false ) ;
-                            if ( clusterLabel == returnLabel ) {
-                                it++;
-                                continue;
-                            } else {
-                                //remove this node; update partitions; and break loop;
-                                members.erase ( it );
-                                break;
-                            }
-                        }
-                    } //
-                } //end of for:: idxSubLabels
-            } else {
-                break; // out for first while;
-            }
-
-        }//end of while
-
-        //check the size of each partition, and see whether equal to pointlabel;
-        vector<vector<int> > tmpParts ( data->allParts.size() );
-        for ( int idxV = 0; idxV < data->numVertices ; ++idxV ) {
-            int label= data->surf.GetPointLabel ( idxV );
-            if ( label!=-1 ) {
-                tmpParts[label].push_back ( idxV );
-            }
-        } // end for loop::idxV
-        data->allParts=tmpParts;
-
-    } // end if;
-
-}
-
-double CFineParcellator::CalculateSilhouette()
-{
-    double silSum = 0;
-    int count=0;
-    vector< CPartition >::iterator itPartition = data->donePartitions.begin();
-    while ( itPartition != data->donePartitions.end() ) {
-
-        //for each parcel in the partition;
-        //a symatric matrix to store the dissimilarity;
-        gsl_matrix* currentAllDisWithin = gsl_matrix_calloc ( itPartition->numParcels,itPartition->numParcels );
-
-// #pragma omp parallel for
-        for ( int idxParcelCurrentPartition = 0; idxParcelCurrentPartition < itPartition->numParcels ; ++idxParcelCurrentPartition ) {
-            int parcelId = itPartition->parcelIds[idxParcelCurrentPartition];
-            //the symatric matrix;
-            for ( int idxParcel2nd = idxParcelCurrentPartition; idxParcel2nd < itPartition->numParcels ; ++idxParcel2nd ) {
-                int parcelId2nd = itPartition->parcelIds[idxParcel2nd];
-                double dissim = this->GetDistanceH2Parcels ( parcelId, parcelId2nd );
-                gsl_matrix_set ( currentAllDisWithin,idxParcelCurrentPartition,idxParcel2nd,dissim );
-                gsl_matrix_set ( currentAllDisWithin,idxParcel2nd,idxParcelCurrentPartition,dissim );
-            } // end for loop::idxParcel2nd
-
-        } // end for loop::idxParcelCurrentPartition
-
-// #pragma omp parallel for reduction (+:silSum)
-
-        for ( int idxParcelCurrentPartition = 0; idxParcelCurrentPartition < itPartition->numParcels ; ++idxParcelCurrentPartition ) {
-            int parcelId = itPartition->parcelIds[idxParcelCurrentPartition];
-
-            double ai = 0;
-            double ai2 = 0;
-            if ( itPartition->numParcels!=1 ) {
-                for ( int idx = 0; idx < itPartition->numParcels ; ++idx ) {
-
-                    if ( ai2 < gsl_matrix_get ( currentAllDisWithin,idxParcelCurrentPartition,idx ) ) {
-                        ai2 = gsl_matrix_get ( currentAllDisWithin,idxParcelCurrentPartition,idx );
-                    }
-                    if ( idx != idxParcelCurrentPartition ) {
-                        ai+= gsl_matrix_get ( currentAllDisWithin,idxParcelCurrentPartition,idx );
-                    }
-                } // end for loop::idx
-                ai/= ( itPartition->numParcels-1 );
-            } else {
-                ai=3;
-            }
-
-// 	    ai=ai2;
-// 	    cout<<data->parcels[parcelId].timeSeries<<endl;
-// 	    cout<<itPartition->principalVector<<endl;
-            ai=this->GetDistanceH2TimeSeries ( data->parcels[parcelId].timeSeries, const_cast<vector<float>&> ( itPartition->principalVector ) );
-
-            //get the dissims of current parcel to neighbouring partitions;
-            vector<double> currentAllDisAcross;
-            set<int>& nbrParts = data->nbrPartitions[count];
-            for ( set<int>::iterator it= nbrParts.begin(); it!= nbrParts.end(); it++ ) {
-                int partitionId = *it;
-                CPartition& part = data->donePartitions[partitionId];
-// 		for ( int idxParcel4CurrentPart = 0; idxParcel4CurrentPart < part.numParcels ; ++idxParcel4CurrentPart )
-// 		{
-// 		  int nbrParcel = part.parcelIds[idxParcel4CurrentPart];
-// 		  double dissim = this->GetDistanceH2TimeSeries(data->parcels[parcelId].timeSeries, data->parcels[nbrParcel].timeSeries);
-// 		  currentAllDisAcross.push_back(dissim);
-// 		} // end for loop::idxParcel4CurrentPart
-                double dissim = this->GetDistanceH2TimeSeries ( data->parcels[parcelId].timeSeries, part.principalVector );
-                currentAllDisAcross.push_back ( dissim );
-
-            }
-
-
-
-            // get the min value and position;
-            double minValue=10000;
-            int minPos = -1;
-            KML::findMinValueAndIndex<> ( currentAllDisAcross,minValue,minPos );
-
-            double bi= minValue;
-            double ci=max<> ( ai,bi );
-            double sili = ( bi-ai ) /ci;
-            silSum+=sili;
-
-        } // end for loop::idxParcelCurrentPartition
-
-
-        gsl_matrix_free ( currentAllDisWithin );
-        itPartition++;
-        ++count;
-    }
-
-
-    return silSum;
-
-}
-
-
-void CFineParcellator::RebuildPartitionsAndNbr()
+ 
+void CFineParcellatorHCP::RebuildPartitionsAndNbr()
 {
 
     //build new nbrs and partitions;
@@ -1146,7 +619,7 @@ void CFineParcellator::RebuildPartitionsAndNbr()
 
 }
 
-void CFineParcellator::DoPCA4Partition ( CPartition& currentPartition )
+void CFineParcellatorHCP::DoPCA4Partition ( CPartition& currentPartition )
 {
 
     set<int> parcelIds;
@@ -1224,107 +697,8 @@ void CFineParcellator::DoPCA4Partition ( CPartition& currentPartition )
 //       KML::SaveFloatMatrix(fileName,rawdata);
 //     }
 }
-
-
-void CFineParcellator::CorrectParcelTopology()
-{
-
-    cout<<"CorrectParcelTopology";
-    bool needCorrection=true;
-    int count=0;
-
-    while ( needCorrection ) {
-        int countLocal = 0;
-        for ( int idxParcel = 0; idxParcel < data->parcels.size() ; ++idxParcel ) {
-            list<int> groupInfos;
-            map<int, list<int> > nbrInfos;
-            data->surf.Propagate2All ( data->parcels[idxParcel].memberIds[0],groupInfos,nbrInfos,data->parcelLabel4vertex );
-            if ( groupInfos.size() != data->parcels[idxParcel].numVertices ) {
-                count++;
-                countLocal++;
-// 				cout<<count<<"::"<<countLocal<<":: topology issue for parcel: "<< idxParcel<<" "<< data->parcels[idxParcel].numVertices <<" "<< groupInfos.size()<<endl;
-                // now correct according group size and nbrhood information;
-
-                //get the rest;
-                vector<int> restGroup;
-                KML::RemoveValues<> ( data->parcels[idxParcel].memberIds,groupInfos,restGroup );
-
-                if ( groupInfos.size() <= 0.5*data->parcels[idxParcel].numVertices ) { // this group is small;
-
-                    //remove all this group from current parcel;
-                    data->parcels[idxParcel].memberIds = restGroup;
-                    data->parcels[idxParcel].numVertices = data->parcels[idxParcel].memberIds.size();
-                    data->parcels[idxParcel].timeSeries = data->bold4vertices[restGroup[0]];
-
-                    //kill this group using nbrhood information;
-                    while ( groupInfos.size() ) {
-                        list<int>::iterator itElem2rm = groupInfos.begin();
-                        while ( itElem2rm!= groupInfos.end() ) {
-
-                            int newLabel = data->surf.ReLabelVertex2Nbr ( *itElem2rm, data->parcelLabel4vertex,1,0 );
-                            if ( newLabel == idxParcel ) {
-                                itElem2rm++;
-                            } else {
-                                if ( -1 != newLabel ) { //remove non-interested vertices; e.g., cc;
-                                    data->parcels[newLabel].memberIds.push_back ( *itElem2rm );
-                                    data->parcels[newLabel].numVertices = data->parcels[newLabel].memberIds.size();
-                                }
-                                groupInfos.erase ( itElem2rm );
-                                break;
-                            }
-
-                        } // end of this round removal;
-                    } // end of group removal;
-                } else { // kill the restGroup;
-
-                    //remove the restGroup from current parcel;
-                    data->parcels[idxParcel].memberIds.clear();
-                    for ( list<int>::iterator it = groupInfos.begin(); it!=groupInfos.end(); it++ ) {
-                        int elm2remain = *it;
-                        data->parcels[idxParcel].memberIds.push_back ( elm2remain );
-                    }; //end of for groupInfos ::elm2remain
-
-
-                    data->parcels[idxParcel].numVertices = data->parcels[idxParcel].memberIds.size();
-                    data->parcels[idxParcel].timeSeries= data->bold4vertices[*groupInfos.begin()];
-
-                    //remove each elem in the restGroup;
-                    while ( restGroup.size() ) {
-                        vector<int> status  = restGroup;
-                        for ( int idx = 0; idx < restGroup.size() ; ++idx ) {
-                            int newLabel = data->surf.ReLabelVertex2Nbr ( restGroup[idx],data->parcelLabel4vertex,1,0 );
-                            if ( newLabel != idxParcel ) {
-                                status[idx] = -1;
-                                if ( -1 != newLabel ) { //  remove non-interested vertices; e.g., cc;
-                                    data->parcels[newLabel].memberIds.push_back ( restGroup[idx] );
-                                    data->parcels[newLabel].numVertices = data->parcels[newLabel].memberIds.size();
-                                }
-                            }
-                        } // end for loop::idx
-
-                        restGroup.clear();
-                        for ( int idx = 0; idx < status.size() ; ++idx ) {
-                            if ( -1 != status[idx] ) {
-                                restGroup.push_back ( status[idx] );
-                            }
-                        } // end for loop::idx
-
-                    } // end of while;
-
-                } // end of else;
-
-            } // end of if;
-        } //end of for::idxParcel;
-
-        if ( 0==countLocal ) {
-            needCorrection = false;
-        }
-    }// end of while ;
-
-    cout<<"...done"<<endl;
-
-}
-void CFineParcellator::CheckPartitionTopology()
+ 
+void CFineParcellatorHCP::CheckPartitionTopology()
 {
     //for each label;
     //find all vertices, and marks in a vector;
@@ -1379,7 +753,7 @@ void CFineParcellator::CheckPartitionTopology()
 }
 
 
-void CFineParcellator::BuildPartitionNbr ( void )
+void CFineParcellatorHCP::BuildPartitionNbr ( void )
 {
 
     cout<<"BuildPartitionNbr"<<endl;
@@ -1440,7 +814,7 @@ void CFineParcellator::BuildPartitionNbr ( void )
 
 }
 
-void CFineParcellator::GenerateColors4Partitions()
+void CFineParcellatorHCP::GenerateColors4Partitions()
 {
 
 
@@ -1462,7 +836,7 @@ void CFineParcellator::GenerateColors4Partitions()
 
 }
 
-void CFineParcellator::PrepareGraph4Ncut ( graph_t* graph, const KML::CPartition& currentPartition )
+void CFineParcellatorHCP::PrepareGraph4Metis ( graph_t* graph, const KML::CPartition& currentPartition )
 {
 
     graph->nedges=0;
@@ -1533,7 +907,7 @@ void CFineParcellator::PrepareGraph4Ncut ( graph_t* graph, const KML::CPartition
 
 }
 
-void CFineParcellator::PrepareGraph4Ncut ( graph_t* graph )
+void CFineParcellatorHCP::PrepareGraph4Metis ( graph_t* graph )
 {
   
   /**** Start of section::for random edge;  ****/
@@ -1630,34 +1004,15 @@ void CFineParcellator::PrepareGraph4Ncut ( graph_t* graph )
 }
 
 
-void CFineParcellator::SaveGraph ( graph_t* graph, string fileName )
+void CFineParcellatorHCP::SaveGraph ( graph_t* graph, string fileName )
 {
 
     WriteGraph(graph,const_cast<char*> (fileName.c_str()));
-
-
-//     fstream outStrm;
-//     KML::OpenWriteStrmAscii ( outStrm,fileName );
-//     outStrm<<graph.nvtxs<<" "<<graph.nedges/2<<" 1 "<<endl;
-//
-//     for ( int idxNode = 0; idxNode < graph.nvtxs ; ++idxNode ) {
-//         int start = graph.xadj[idxNode];
-//         int end = graph.xadj[idxNode+1];
-//
-//         for ( int elem = start; elem < end; elem++ ) {
-//             outStrm<< graph.adjncy[elem]+1<<" "<< graph.adjwgt[elem]<<" ";
-//         }
-//
-//         outStrm<<endl;
-//
-//     } // end for loop::idxNode
-//
-//
-//     outStrm.close();
+ 
 }
 
 
-void CFineParcellator::PrintAllPartitionInfo ( bool isInteractive, string saveFile )
+void CFineParcellatorHCP::PrintAllPartitionInfo ( bool isInteractive, string saveFile )
 {
 
     vector<double> allRatios;
@@ -1691,7 +1046,7 @@ void CFineParcellator::PrintAllPartitionInfo ( bool isInteractive, string saveFi
     }
 }
 
-void CFineParcellator::SavePartitionMetaInforSphere ( string sphereReg, string fileName )
+void CFineParcellatorHCP::SavePartitionMetaInforSphere ( string sphereReg, string fileName )
 {
     CTriSurface mySurf ( sphereReg,true );
     float radius = 0; //default freesurfer sphere radius;
@@ -1806,7 +1161,7 @@ void CFineParcellator::SavePartitionMetaInforSphere ( string sphereReg, string f
 
 }
 
-void CFineParcellator::OutPartSizeHist ( string fileName, int minSize, int maxSize )
+void CFineParcellatorHCP::OutputPartitionSizeHistogram ( string fileName, int minSize, int maxSize )
 {
 
     vector<int> hist ( maxSize-minSize,0 );
@@ -1818,7 +1173,7 @@ void CFineParcellator::OutPartSizeHist ( string fileName, int minSize, int maxSi
 
 }
 
-float CFineParcellator::GetSimilarityTwoTimeSeries ( std::vector< float >& timeseries1, std::vector< float >& timeseries2 )
+float CFineParcellatorHCP::GetSimilarityTwoTimeSeries ( std::vector< float >& timeseries1, std::vector< float >& timeseries2 )
 {
     if ( 0== data->simType ) {
         float correl = KML::CoorelOfTwoSeries<> ( timeseries1,timeseries2,0,data->numTimePoints ) ;
@@ -1856,7 +1211,7 @@ float CFineParcellator::GetSimilarityTwoTimeSeries ( std::vector< float >& times
 
 
 
-void CFineParcellator::CalculateInfoCritera ( float& part1, float& aic, float& bic, float& icl )
+void CFineParcellatorHCP::CalculateInfoCritera ( float& part1, float& aic, float& bic, float& icl )
 {
     //estimate distribution variance;
     //the variance sigmaSquare = 1/N*SUM(SUM(Dis(pi-Ck)); pi is a member of cluster/partition Ck; N is the number of parces;
@@ -1978,7 +1333,7 @@ void CFineParcellator::CalculateInfoCritera ( float& part1, float& aic, float& b
 }
 
 //get the distance between the parcel and its partition;
-float CFineParcellator::GetDistanceHParcelAndPartition ( int parcelIdx, int partitionIdx )
+float CFineParcellatorHCP::GetDistanceHParcelAndPartition ( int parcelIdx, int partitionIdx )
 {
     //the distance dis=e^(-s/(d^p));
     //where s is the similarity;
@@ -2001,14 +1356,9 @@ float CFineParcellator::GetDistanceHParcelAndPartition ( int parcelIdx, int part
 
     return this->GetDistanceH2TimeSeries ( data->parcels[parcelIdx].timeSeries, data->donePartitions[partitionIdx].principalVector );
 
-}
+} 
 
-double CFineParcellator::GetDistanceH2Parcels ( int parcelIdx1, int parcelIdx2 )
-{
-    return this->GetDistanceH2TimeSeries ( data->parcels[parcelIdx1].timeSeries, data->parcels[parcelIdx2].timeSeries );
-}
-
-double CFineParcellator::GetDistanceH2TimeSeries ( std::vector< float >& s1, std::vector< float >& s2 )
+double CFineParcellatorHCP::GetDistanceH2TimeSeries ( std::vector< float >& s1, std::vector< float >& s2 )
 {
     float sim = this->GetSimilarityTwoTimeSeries ( s1,s2 );
 //     double result = atan2(0.1,sim-data->meanSimilarity);
@@ -2016,7 +1366,7 @@ double CFineParcellator::GetDistanceH2TimeSeries ( std::vector< float >& s1, std
     return result;
 }
 
-void CFineParcellator::DetermineMeanSimilarity ( int numSamples )
+void CFineParcellatorHCP::DetermineMeanSimilarity ( int numSamples )
 {
     int count=0;
     double allSims = 0.f;
@@ -2042,7 +1392,7 @@ void CFineParcellator::DetermineMeanSimilarity ( int numSamples )
     cout<<"mean similarity of parcels with "<<numSamples<<" samples: "<<data->meanSimilarity<<endl;
 }
 
-void CFineParcellator::CalculateAreas4Partitions()
+void CFineParcellatorHCP::CalculateAreas4Partitions()
 {
     data->surf.WarpPointLabel2CellLabel();
     data->allAreas.clear();

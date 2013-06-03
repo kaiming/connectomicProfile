@@ -11,8 +11,8 @@ namespace KML{
 
 class CParcel {
 
-    friend class CPrivacyFineParcellator;
-    friend class CFineParcellator;
+    friend class CPrivacyFineParcellatorHCP;
+    friend class CFineParcellatorHCP;
     friend class CPartition;
 
     vector<float> timeSeries;

@@ -14,7 +14,7 @@ endif(Gifti_FOUND)
 
 
 
-set(subdirs affineTransformPolydata  fineParcellation   trainDLModelProfile  calculateConnectivityPattern  fsConverter  visualizeFuncNets findCommonRsns generateCentralSurface  volumeConverter findCorrespondingCandisParts  getIndividualProfile findFsRegMatchingVertices  rmCentralSurfSpikes )
+set(subdirs affineTransformPolydata  fineParcellation   trainDLModelProfile  calculateConnectivityPattern  fsConverter  visualizeFuncNets findCommonRsns generateCentralSurface  volumeConverter findCorrespondingCandisParts  getIndividualProfile findFsRegMatchingVertices  rmCentralSurfSpikes fineParcellationHCP)
 
 foreach ( program ${subdirs} )
 add_subdirectory (${program} ) 
