@@ -62,38 +62,41 @@ int main(int argc, char **argv) {
   cmdParser.add(randomParcelOpt);
   
  
-  if(5 > argc ){
+  if(4 > argc ){
     cmdParser.usage(); 
     exit(EXIT_FAILURE);
   }
-  cmdParser.parse_command_line(argc,argv,4);
+  cmdParser.parse_command_line(argc,argv,3);
 
+  
+  //setup metis params; 
 
- 
+ CFineParcellatorHCP myParcellator(argv[1],argv[2],argv[3]); 
+ myParcellator.PartitioningWholeBrainWithMetis();
 
-  CFineParcellatorHCP myParcellator ( argv[1],argv[2],argv[3]); 
-  myParcellator.SetSimType(simTypeOpt.value());
-  myParcellator.SetBaseName(argv[4]);
-  myParcellator.SetBalance(balanceOpt.value());
-  myParcellator.SetMinCorrelThresh(minCorrelOpt.value());
-  myParcellator.SetUsePCA4Bold(usePCA4BOLDOpt.value());
-  myParcellator.SetNumsMetisSolutions(solutionNumberOpt.value());
-  myParcellator.SetRandomParcellation(randomParcelOpt.value()); 
-  
-  if(simTypeOpt.value()==1)
-  {
-    myParcellator.SetWindLength(windLengthOpt.value());
-  }
- 
-  if(caret2fsOpt.set())
-  {
-    myParcellator.SetCaretSurf2FSReg(caret2fsOpt.value()); 
-  }
-  
-  myParcellator.PartitioningWholeBrainWithMetis(numCutOpt.value()); 
-  
-  myParcellator.SavePartitions(outputPartsVtkOpt.set(),checkCPVidOpt.value());
-    
+//   CFineParcellatorHCP myParcellator ( argv[1],argv[2],argv[3]); 
+//   myParcellator.SetSimType(simTypeOpt.value());
+//   myParcellator.SetBaseName(argv[4]);
+//   myParcellator.SetBalance(balanceOpt.value());
+//   myParcellator.SetMinCorrelThresh(minCorrelOpt.value());
+//   myParcellator.SetUsePCA4Bold(usePCA4BOLDOpt.value());
+//   myParcellator.SetNumsMetisSolutions(solutionNumberOpt.value());
+//   myParcellator.SetRandomParcellation(randomParcelOpt.value()); 
+//   
+//   if(simTypeOpt.value()==1)
+//   {
+//     myParcellator.SetWindLength(windLengthOpt.value());
+//   }
+//  
+//   if(caret2fsOpt.set())
+//   {
+//     myParcellator.SetCaretSurf2FSReg(caret2fsOpt.value()); 
+//   }
+//   
+//   myParcellator.PartitioningWholeBrainWithMetis(numCutOpt.value()); 
+//   
+//   myParcellator.SavePartitions(outputPartsVtkOpt.set(),checkCPVidOpt.value());
+//     
   //the following 4 lines are for computational time of fine parcellation; 
   //put it where you want to end timing; 
   #ifdef __KML__NEEDTIMECOST  
